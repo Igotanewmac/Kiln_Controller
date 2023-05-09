@@ -48,68 +48,112 @@ MAX6675 obj_thermocouple( PIN_THERMOCOUPLE_CLK , PIN_THERMOCOUPLE_CS , PIN_THERM
 
 
 
+// some global variables
+
+// the switch debounce value
+uint8_t oldinput = 1;
+
+// is the heater enabled?
+uint8_t heatertoggle = 0;
+
+// sgould the heater be turned on right now?
+uint8_t heaterstate = 0;
+
+
+
+
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
-  pinMode( heaterpin , OUTPUT );
-
+  
+  // encoder pins
   pinMode( PIN_ENCODER_SW , INPUT_PULLUP );
   pinMode( PIN_ENCODER_CLK , INPUT );
   pinMode( PIN_ENCODER_DT , INPUT );
 
-    /*
-   The MAX72XX is in power-saving mode on startup,
-   we have to do a wakeup call
-   */
-  lc.shutdown(0,false);
-  /* Set the brightness to a medium values */
-  lc.setIntensity(0,1);
-  /* and clear the display */
-  lc.clearDisplay(0);
-
+  // heater pin
+  pinMode( PIN_HEATER , OUTPUT );
+  digitalWrite( PIN_HEATER , LOW );
+  
+  // displau
+  obj_leddisplay.shutdown( 0 , false );
+  obj_leddisplay.setIntensity( 0 , 1 );
+  obj_leddisplay.clearDisplay(0);
 
 }
+
+
+
+
+
+
+
+uint8_t updatecount = 0;
+
 
 void loop() {
   // put your main code here, to run repeatedly:
   
-  // lc.setChar(0,0,'1',true);
-  
-  
-  float temperature = thermocouple.readCelsius();
 
-  Serial.print("C = "); 
-  Serial.println( temperature );
+  // get current temperature
+  uint16_t current_temp;
+  updatecount++;
+  if ( updatecount == 5 ) { updatecount = 0; }
+  if ( updatecount == 0 ) {
+    current_temp = obj_thermocouple.readCelsius();
+  }
 
-  float testtemp = myEnc.read()/4;
-
-
-  int temptemp = (int)testtemp;
-  
-  // 100s digit
-  lc.setDigit( 0 , 6 , temptemp/100 , 0 );
-  temptemp -= (temptemp/100)*100;
-  
-  // 10s digit
-  lc.setDigit( 0 , 5 , temptemp/10 , 0 );
-  temptemp -= (temptemp/10)*10;
-  
-  // 1s digit
-  lc.setDigit( 0 , 4 , temptemp , 0 );
+  // get current target temperature
+  if ( obj_encoder.read() < 0 ) {
+    obj_encoder.write(0);
+  }
+  uint16_t target_temp = obj_encoder.read() / 4;
 
 
-  lc.setDigit( 0 , 0 , digitalRead( PIN_ENCODER_SW ) ? 1 : 0 , 0 );
+  // check switch
+  uint8_t newinput = digitalRead( PIN_ENCODER_SW );
+
+  if ( ( newinput == 0 ) && ( oldinput == 1 ) ) {
+    // switch has been pressed!
+    heatertoggle = heatertoggle ? 0 : 1;
+  }
+
+  oldinput = newinput;
 
 
-
-  if ( temperature <= MAXTEMP ) {
-    digitalWrite( heaterpin , HIGH );
+    // check for heater status
+  if ( ( current_temp < target_temp ) && ( heatertoggle ) ) {
+    digitalWrite( PIN_HEATER , HIGH );
+    heaterstate = 1;
   }
   else {
-    digitalWrite( heaterpin , LOW );
+    digitalWrite( PIN_HEATER , LOW );
+    heaterstate = 0;
   }
 
-  delay(500);
+  // update display
+  uint16_t temptemp;
+  //actual temp
+  temptemp = current_temp;
+  obj_leddisplay.setDigit( 0 , 2 , temptemp / 100 , heaterstate );
+  temptemp -= (temptemp/100)*100;
+  obj_leddisplay.setDigit( 0 , 1 , temptemp / 10 , heaterstate );
+  temptemp -= (temptemp/10)*10;
+  obj_leddisplay.setDigit( 0 , 0 , temptemp , heaterstate );
+  // targettemp
+  temptemp = target_temp;
+  obj_leddisplay.setDigit( 0 , 6 , temptemp / 100 , heatertoggle );
+  temptemp -= (temptemp/100)*100;
+  obj_leddisplay.setDigit( 0 , 5 , temptemp / 10 , heatertoggle );
+  temptemp -= (temptemp/10)*10;
+  obj_leddisplay.setDigit( 0 , 4 , temptemp , heatertoggle );
+  
+
+
+
+  delay( 100 );
+
 
 }
 
